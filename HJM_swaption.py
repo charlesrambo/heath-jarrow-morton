@@ -95,8 +95,8 @@ def estimate_black_vol_mc(latest_curve, maturities, vol_splines, expiry, tenor,
     # Convert to a numpy array
     swaps_expiration = np.array(swaps_expiration)
     
-    # Clip negative rates at 0 so we can take logs
-    swaps_expiration = np.clip(swaps_expiration, a_min = 0)
+    # Clip negative rates so we can take logs
+    swaps_expiration = np.clip(swaps_expiration, a_min = 1e-7)
       
     # Calculate the log returns
     log_returns = np.log(swaps_expiration/initial_swap_rate)
