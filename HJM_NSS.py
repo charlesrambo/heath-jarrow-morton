@@ -110,8 +110,9 @@ def simulate_hjm(fwd_curve, maturities, vol_splines, dt = 1/252, num_steps = 252
     """Simulates the evolution of the forward rate curve over time.
 
     fwd_curve: Initial forward rate curve (1D array)
-    maturities: Maturity vector corresponding to the curve vols: PCA
-    volatility components (shape: num_maturities, num_factors) dt: Time step
+    maturities: Maturity vector corresponding to the curve 
+    vol_splines: volatility components represented as spline functions
+    dt: Time step
     (daily) num_steps: Number of steps to simulate
     """
     
@@ -127,16 +128,14 @@ def simulate_hjm(fwd_curve, maturities, vol_splines, dt = 1/252, num_steps = 252
     
     # Initialize array to hold drift terms
     drift = np.zeros(num_maturities)
-
-    for m, T in enumerate(maturities):
+    
+    for vol_func in vol_splines:
         
-        for vol_func in vol_splines:
-            
-            # Use the spline's own integration capability for better precision
-            sigma_T = vol_func(T)
-            
-            # drift = sigma(T) * integral from 0 to T of sigma(s)ds
-            drift[m] += sigma_T * (vol_func.antiderivative()(T) - vol_func.antiderivative()(0))
+        # Get the volatilities
+        sigma = vol_func(maturities)
+        
+        # Use the spline's own integration capability for better precision
+        drift += sigma * (vol_func.antiderivative()(maturities) - vol_func.antiderivative()(0))
 
     # Initialize list to hold simulated curve
     simulated_curves = [current_curve]
@@ -174,6 +173,72 @@ def simulate_hjm(fwd_curve, maturities, vol_splines, dt = 1/252, num_steps = 252
         current_curve = new_curve
 
     return np.array(simulated_curves)
+
+
+def simulate_hjm_vectorized(fwd_curve, maturities, vol_splines, dt = 1/252, 
+                           num_steps = 252, num_sims = 10_000):
+    """
+    Vectorized HJM simulation.
+    Weird AI vectorization techniques.
+    Returns:
+        results: numpy array of shape (num_steps + 1, num_sims, num_maturities)
+    """
+    num_factors = len(vol_splines)
+    num_maturities = len(maturities)
+    
+    # Initialize array to hold drift terms
+    drift = np.zeros(num_maturities)
+            
+    for vol_func in vol_splines:
+        
+        # Get the volatilities
+        sigma = vol_func(maturities)
+        
+        # Use the spline's own integration capability for better precision
+        drift += sigma * (vol_func.antiderivative()(maturities) - vol_func.antiderivative()(0))
+
+    # Compute Aging Matrix
+    # This transforms the curve from time t to t + dt via cubic interpolation
+    basis = np.eye(num_maturities)
+    
+    W = np.zeros((num_maturities, num_maturities))
+    
+    for i in range(num_maturities):
+        
+        spline = CubicSpline(maturities, basis[i], bc_type = 'natural')
+        
+        W[i, :] = spline(maturities + dt)
+
+    # Prepare Volatility Matrix
+    vol_matrix = np.array([vol_func(maturities) for vol_func in vol_splines])
+
+    # Convert fwd_curve to array if it's a Series
+    base_curve = np.array(fwd_curve).flatten()
+    current_curves = np.tile(base_curve, (num_sims, 1))
+    
+    # Storage for all paths: (steps+1, sims, mats)
+    results = np.zeros((num_steps + 1, num_sims, num_maturities))
+    results[0] = current_curves
+
+    # Simulation Loop
+    drift_dt = drift * dt
+    sqrt_dt = np.sqrt(dt)
+    
+    for t in range(1, num_steps + 1):
+        
+        # Generate shocks for this step
+        shocks = np.random.normal(0, 1, (num_sims, num_factors))
+        
+        # Diffusion
+        diffusion = (shocks @ vol_matrix) * sqrt_dt
+        
+        # Vectorized step
+        current_curves = (current_curves @ W) + drift_dt + diffusion
+        
+        # Add to results
+        results[t] = current_curves
+
+    return results
 
 
 def forward_to_spot(maturities, forward_curve):

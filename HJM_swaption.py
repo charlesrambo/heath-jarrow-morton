@@ -71,32 +71,32 @@ def estimate_black_vol_mc(latest_curve, maturities, vol_splines, expiry, tenor,
     # Recalculate dt
     dt = expiry/steps
     
-    # Get the swap rates at expiration
+    # All paths shap
+    all_paths = hjm.simulate_hjm_vectorized(latest_curve, maturities, 
+                                                 vol_splines, dt = dt, 
+                                                 num_steps = steps, 
+                                                 num_sims = num_vols)
+    
+    # Get forward rates at expiry (last time step)
+    fwd_expiry = all_paths[-1] 
+    
+    # Initialize list to hold swap rates
     swaps_expiration = []
     
-    for _ in range(num_vols):
+    # Calculate swap rates 
+    for i in range(num_vols):
         
-        # Simulate path of rates
-        path = hjm.simulate_hjm(latest_curve, maturities, vol_splines, dt = dt, 
-                                num_steps = steps)
+        spot_expiry = hjm.forward_to_spot(maturities, fwd_expiry[i])
         
-        # Get the forward rates at expiration
-        fwd_expiry = path[-1]
-        
-        # Calculate the spot rates at expiration
-        spot_expiry = hjm.forward_to_spot(maturities, fwd_expiry)
-        
-        # Use spot rates to calculate swap rate
         swap_rate, _ = get_swap_rate(maturities, spot_expiry, tenor)
         
-        # Add to list
         swaps_expiration.append(swap_rate)
      
     # Convert to a numpy array
     swaps_expiration = np.array(swaps_expiration)
     
     # Clip negative rates so we can take logs
-    swaps_expiration = np.clip(swaps_expiration, a_min = 1e-7)
+    swaps_expiration = np.clip(swaps_expiration, a_min = 1e-7, a_max = None)
       
     # Calculate the log returns
     log_returns = np.log(swaps_expiration/initial_swap_rate)
@@ -117,41 +117,32 @@ def price_swaption_mc(latest_curve, maturities, vol_splines, expiry = 1.0,
     # Recalculate dt
     dt = expiry/steps
     
-    # Inilize list of payoffs
+    # Run full simulation 
+    all_paths = hjm.simulate_hjm_vectorized(latest_curve, maturities, 
+                                                 vol_splines, dt = dt, 
+                                                 num_steps = steps, 
+                                                 num_sims = num_sims)
+    
+    # Calculate discount factors 
+    discount_factors = np.exp(-np.trapz(all_paths[:, :, 0], dx = dt, axis = 0))
+    
+    # The last simulated curve
+    fwd_at_expiry = all_paths[-1] 
+    
+    # Initialize list to hold payoffs
     payoffs = []
  
-    for _ in range(num_sims):
+    for i in range(num_sims):
         
-        # Simulate forward curve evolution
-        path = hjm.simulate_hjm(latest_curve, maturities, vol_splines, 
-                            dt = dt, num_steps = steps)
+        # Convert forward curve to spot curve
+        spot_at_expiry = hjm.forward_to_spot(maturities, fwd_at_expiry[i])
         
-        # Get the forward curve in one year
-        fwd_at_expiry = path[-1]
-        
-        # Get spot curve at expiration
-        spot_at_expiry = hjm.forward_to_spot(maturities, fwd_at_expiry)
-        
-        # Calculate realized swap rate and annuity
+        # Get swap rate and annuity
         swap_rate, annuity = get_swap_rate(maturities, spot_at_expiry, tenor)
         
-        # Calculate payoff for payer swaption
+        # Calculate discounted payoff
         payoff = annuity * np.max([swap_rate - strike, 0])
-        
-        # Discount back using initial spot curve
-        initial_spot = hjm.forward_to_spot(maturities, latest_curve)
-        
-        # Fit the spline to the current spot curve; linear boundary condition
-        spot_spline = CubicSpline(maturities, initial_spot, bc_type = 'natural')
-        
-        # Use spline to get spot rate at expiration
-        z_expiry = spot_spline(expiry)
-        
-        # Calculate the discount factor
-        discount_factor = 1/(1 + z_expiry/2)**(2 * expiry)
-        
-        # Add discounted payoff to list
-        payoffs.append(payoff * discount_factor)
+        payoffs.append(payoff * discount_factors[i])
         
     return np.mean(payoffs), np.std(payoffs, ddof = 1)/np.sqrt(num_sims)
 
@@ -176,7 +167,7 @@ if __name__ == "__main__":
     # HJM Price and standard error of estimate
     hjm_price, se = price_swaption_mc(latest_curve, maturities, vol_splines, 
                                           expiry = expiry, tenor = tenor, 
-                                          strike = strike)
+                                          strike = strike, num_sims = 100_000)
     
     # Use the forward curve to get current spot rates
     initial_spot = hjm.forward_to_spot(maturities, latest_curve)
@@ -184,7 +175,7 @@ if __name__ == "__main__":
     
     # Simulate volatility of swap rate using HJM model
     swap_vol = estimate_black_vol_mc(latest_curve, maturities, vol_splines, 
-                                     expiry, tenor, num_vols = 10_000)
+                                     expiry, tenor, num_vols = 100_000)
     
     # Calculate the Black swaption price
     black_price = black_swaption(swap_rate, strike, expiry, swap_vol, 
