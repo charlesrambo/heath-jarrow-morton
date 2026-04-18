@@ -186,4 +186,4 @@ if __name__ == "__main__":
     print(f"HJM Swaption Price: {hjm_price:.5f}")
     print(f"Black Price: {black_price:.5f}")
     
-    print(f'\nThis program took {(time.perf_counter() - start_time)/20:.2f} minutes.')
+    print(f'\nThis program took {(time.perf_counter() - start_time)/60:.2f} minutes.')
