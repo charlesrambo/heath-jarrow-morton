@@ -125,8 +125,14 @@ def calculate_bond_risk_metrics(latest_curve, maturities, vol_splines,
     # Calculate the funding factor for every path
     funding_accrual = np.exp(np.trapz(outer_paths[:, :, 0], dx = dt, axis = 0))
     
-    # Calculate P&L at Horizon
-    fwd_at_horizon = outer_paths[-1] 
+    # Get last forward curve in simulation
+    fwd_at_horizon = outer_paths[-1].copy() 
+    
+    # Get the short rate paths
+    short_rate_paths = outer_paths[:, :, 0].copy()
+    
+    # Delete outer_paths because it's probably very big
+    del outer_paths
     
     # Pre-calculate coupon timing (
     cf_dates = np.arange(0.5, bond_maturity + 0.5, 0.5)
@@ -154,7 +160,7 @@ def calculate_bond_risk_metrics(latest_curve, maturities, vol_splines,
             start_step = int(coupon_date/dt)
         
             # Pull the short-rate path from the moment of payment to the end of the horizon
-            path_rates = outer_paths[start_step:, i, 0]
+            path_rates = short_rate_paths[start_step:, i]
         
             # Calculate the reinvestment factor 
             reinvestment_factor = np.exp(np.trapz(path_rates, dx = dt))
