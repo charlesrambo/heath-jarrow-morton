@@ -58,6 +58,10 @@ def load_fed_data(url, headers, skiprows = 9):
     # Get the six-month rate
     df["SVENF0.5"] = get_NSS_forward(0.5, df["BETA0"], df["BETA1"], df["BETA2"], 
                                    df["BETA3"], df["TAU1"], df["TAU2"])
+    
+    # Get the 40-year rate; helpful to price long tenor maturies as we roll along curve
+    df["SVENF40"] = get_NSS_forward(0.5, df["BETA0"], df["BETA1"], df["BETA2"], 
+                                   df["BETA3"], df["TAU1"], df["TAU2"])
 
     # Extract Instantaneous Forward Rates (prefixed with SVENF)
     forward_cols = [col for col in df.columns if col.startswith("SVENF")]
@@ -106,6 +110,25 @@ def get_hjm_volatility(fwd_data, num_components = 0.95, lam = None):
     return maturities, vol_splines, pca
 
 
+def get_hjm_drift(maturities, vol_splines):
+    """
+    Function to calculate HJM no arbitrage drift term.
+    """
+    
+    # Initialize array to hold drift terms
+    drift = np.zeros_like(maturities)
+    
+    for vol_func in vol_splines:
+        
+        # Get the volatilities
+        sigma = vol_func(maturities)
+        
+        # Use the spline's own integration capability for better precision
+        drift += sigma * (vol_func.antiderivative()(maturities) - vol_func.antiderivative()(0))
+        
+    return drift
+    
+    
 def simulate_hjm(fwd_curve, maturities, vol_splines, dt = 1/252, num_steps = 252):
     """Simulates the evolution of the forward rate curve over time.
 
@@ -125,18 +148,10 @@ def simulate_hjm(fwd_curve, maturities, vol_splines, dt = 1/252, num_steps = 252
         current_curve = fwd_curve.to_numpy().flatten()  
     else:
         current_curve = np.array(fwd_curve).copy()
-    
-    # Initialize array to hold drift terms
-    drift = np.zeros(num_maturities)
-    
-    for vol_func in vol_splines:
         
-        # Get the volatilities
-        sigma = vol_func(maturities)
-        
-        # Use the spline's own integration capability for better precision
-        drift += sigma * (vol_func.antiderivative()(maturities) - vol_func.antiderivative()(0))
-
+    # Calculate the drift at maturities + dt
+    drift = get_hjm_drift(maturities, vol_splines)
+    
     # Initialize list to hold simulated curve
     simulated_curves = [current_curve]
 
@@ -152,7 +167,7 @@ def simulate_hjm(fwd_curve, maturities, vol_splines, dt = 1/252, num_steps = 252
         for i, vol_func in enumerate(vol_splines):
             
             # Evaluate the volatility spline at the specific maturities
-            diffusion += vol_func(maturities) * shocks[i] * np.sqrt(dt)
+            diffusion += vol_func(maturities + dt) * shocks[i] * np.sqrt(dt)
 
         # Initialize new curve
         new_curve = np.zeros(num_maturities)
@@ -306,7 +321,7 @@ def plot_scree(pca, threshold = 0.95, figsize = (10, 6)):
     
     # Add a horizontal line at the 95% threshold
     ax2.axhline(y = threshold, color = 'red', linestyle = '--', alpha = 0.7, 
-                label = r'{threshold:0.0%} Threshold')
+                label = f'{threshold:0.0%} Threshold')
     
     # Merge legends from both axes
     lines1, labels1 = ax1.get_legend_handles_labels()
