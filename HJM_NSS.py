@@ -59,8 +59,8 @@ def load_fed_data(url, headers, skiprows = 9):
     df["SVENF0.5"] = get_NSS_forward(0.5, df["BETA0"], df["BETA1"], df["BETA2"], 
                                    df["BETA3"], df["TAU1"], df["TAU2"])
     
-    # Get the 40-year rate; helpful to price long tenor maturies as we roll along curve
-    df["SVENF40"] = get_NSS_forward(0.5, df["BETA0"], df["BETA1"], df["BETA2"], 
+    # Get the 35-year rate; helpful to price long tenor maturies as we roll along curve
+    df["SVENF35"] = get_NSS_forward(35, df["BETA0"], df["BETA1"], df["BETA2"], 
                                    df["BETA3"], df["TAU1"], df["TAU2"])
 
     # Extract Instantaneous Forward Rates (prefixed with SVENF)
