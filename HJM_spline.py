@@ -17,19 +17,19 @@ from scipy.integrate import cumulative_trapezoid
 def load_cmt_data():
     
     # List of all tenors for a high-res curve
-    tenors = ['DFF', 'SOFR', 'DGS1MO', 'DGS3MO', 'DGS6MO', 
-              'DGS1', 'DGS2', 'DGS3', 'DGS5', 'DGS7', 'DGS10', 'DGS20', 'DGS30']
+    tenors = ['DFF', 'SOFR', 'DGS1MO', 'DGS3MO', 'DGS6MO', 'DGS1', 'DGS2', 
+              'DGS3', 'DGS5', 'DGS7', 'DGS10', 'DGS20', 'DGS30']
     
     # Get the current date
     end_date = dt.datetime.now()
     
-    # Go back tem years
+    # Go back ten years
     start_date = end_date - dt.timedelta(days = 10 * 365)
     
     # Make the month January and the day 1
     start_date = start_date.replace(month = 1, day = 1)
     
-    # Fetch the last 5 years of daily data
+    # Fetch the last ten years of daily data
     cmt_data = web.DataReader(tenors, 'fred', start_date, end_date )
     
     # Fill missing SOFR rates with DFF
@@ -44,7 +44,7 @@ def load_cmt_data():
     # Convert percentage to decimals
     cmt_data = cmt_data / 100.0
     
-    # Rename columns for clarity in your HJM script
+    # Rename columns for clarity in HJM script
     cmt_data.columns = ['0Y', '0.083Y', '0.25Y', '0.5Y', 
                         '1Y', '2Y', '3Y', '5Y', '7Y', '10Y', '20Y', '30Y']
     
@@ -155,13 +155,13 @@ def get_hjm_forward_data(cmt_data, eval_maturities = None):
     return fwd_data
 
 
-def get_hjm_volatility(fwd_data, n_components = 0.95, lam = None):
+def get_hjm_volatility(fwd_data, num_components = 0.95, lam = None):
     
     # Calculate change in forward rates
     diff_data = fwd_data.diff().dropna()
 
     # Fit PCA
-    pca = PCA(n_components = n_components)
+    pca = PCA(n_components = num_components)
     pca.fit(diff_data)
 
     # Get the number of components
@@ -240,9 +240,10 @@ def simulate_hjm(fwd_curve, maturities, vol_splines, dt = 1/252, n_steps = 252):
         new_curve = np.zeros(n_maturities)
         
         # Interpolate the current curve to "age" it by dt
-        # Use 'natural' or 'clamped' boundary conditions to handle the long end
         curve_spline = CubicSpline(maturities, current_curve, bc_type = 'natural')
-        rolled_rates = curve_spline(maturities + dt)
+        
+        # Make constant past the max maturity
+        rolled_rates = curve_spline(np.minimum(maturities + dt, np.max(maturities)))
 
         # Rolldown + Drift + Diffusion
         new_curve = rolled_rates + drift * dt + diffusion
@@ -294,7 +295,7 @@ if __name__ == "__main__":
 
     print("\nRunning PCA to compute HJM volatility parameters...")
     maturities, vol_splines, pca = get_hjm_volatility(fwd_data, 
-                                                      n_components = 0.95)
+                                                      num_components = 0.95)
 
     # Plot the Volatility Structures (Factor Loadings)
     plt.figure(figsize = (10, 6))
