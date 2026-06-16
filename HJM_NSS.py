@@ -150,7 +150,7 @@ def simulate_hjm(fwd_curve, maturities, vol_splines, dt = 1/252, num_steps = 252
         current_curve = np.array(fwd_curve).copy()
         
     # Calculate the drift at maturities + dt
-    drift = get_hjm_drift(maturities, vol_splines)
+    drift = get_hjm_drift(maturities + dt, vol_splines)
     
     # Initialize list to hold simulated curve
     simulated_curves = [current_curve]
